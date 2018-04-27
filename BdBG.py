@@ -67,7 +67,7 @@ def main(args):
         del sortseq
         del graph
     else:
-        print("decode finished")
+        print("decode coming soon.")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description = 'BdBG')
