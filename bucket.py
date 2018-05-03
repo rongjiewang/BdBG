@@ -7,6 +7,7 @@ import string
 import numpy as np
 from ngs_plumbing import dna ## DNA to 2bit
 from bitstring import * ##glombe integer
+from bitstream import BitStream as sream
 
 from khmer import __version__
 from khmer.khmer_args import (sanitize_help, ComboFormatter, info,
@@ -15,16 +16,18 @@ from readFQ import get_chunks,get_chunksData
 from screed import Record
 from utils import to_str
 import copy
+import struct
 
-class sortSequenceClass(object):
+class encodeBucketClass(object):
     """docstring for sortSequence"""
     def __init__(self):
         self.mutiDict = {} ### kmers for buckets 
         self.bucketTable = {} ### buckets index and it's reads number
         self.sequenceTable = {} ####bucket as diction index, within bucket include (seq,reverseFlag,indexPos) 
         self.sequenceTableSave = {}
-        self.kmerLen = 8
-        self.bucketIndexLen = 8
+        self.kmerLen = 15
+        self.bucketIndexLen = 15
+        self.blockSize = 1024
         self.recordNum = 0
         self.records = [] #read the input data
         self.onsies = 0 ####the number of bucket which only have one seq
@@ -34,9 +37,11 @@ class sortSequenceClass(object):
         self.skipZone = 0
         self.record = Record()
         self.buffer = None
-        self.sequenceNIndex = [] #indicate if the seq include N
-        self.filePath = ""#indecate the file path
+        self.sequenceNFlag = False #indicate if the seq include N
+        self.fileInputPath = ""#indecate the file path
+        self.fileOutputPath = ""#indecate the file path
         self.readLen = 0
+        self.fileoutName = {"index":"","cov":"","rc":"","N":"","indexPos":""}
     def emptyPara(self):
         self.mutiDict = {} ### kmers for buckets 
         self.bucketTable = {} ### buckets index and it's reads number
@@ -62,6 +67,9 @@ class sortSequenceClass(object):
         return self.readLen
     def setBucketIndex(self,bucketIndexLen):
         self.bucketIndexLen = bucketIndexLen
+        return
+    def setBlockSize(self, blockSize):
+        self.blockSize = blockSize
         return
     def getBucketKmers(self,seq):
         for i in xrange(self.readLen-self.skipZone-self.bucketIndexLen+1):
@@ -197,7 +205,10 @@ class sortSequenceClass(object):
         self.bucketTable[index] = self.bucketTable.get(index,0) + 1
         if reverseFlag:
             self.record['sequence'] = screed.rc(str(self.record['sequence']))
-        self.sequenceTable.setdefault(index, []).append([copy.deepcopy(self.record),reverseFlag,indexPos])
+        if self.sequenceNFlag:
+            self.sequenceTable.setdefault(index, []).append([copy.deepcopy(self.record),reverseFlag,indexPos, self.sequenceN])
+        else:
+            self.sequenceTable.setdefault(index, []).append([copy.deepcopy(self.record),reverseFlag,indexPos, self.sequenceNFlag])
     def reassigned(self): 
         for countIndex in self.bucketTable.keys():
             if self.bucketTable[countIndex] == 1:
@@ -206,9 +217,14 @@ class sortSequenceClass(object):
                 record = self.sequenceTable[countIndex][0]
                 del self.sequenceTable[countIndex]
                 self.record = record[0]
-                index,reverseFlag,indexPos = self.getMostCommenIndex()                  
+                if record[1]:##recover the raw sequence
+                    self.record['sequence'] = screed.rc(str(self.record['sequence']))                
+                Ninfor = record[3]                
+                index,reverseFlag,indexPos = self.getMostCommenIndex()                              
                 self.bucketTable[index] = self.bucketTable.get(index,0) + 1
-                self.sequenceTable.setdefault(index, []).append([record[0],reverseFlag,indexPos])
+                if reverseFlag:##recover the raw sequence
+                    self.record['sequence'] = screed.rc(str(self.record['sequence'])) 
+                self.sequenceTable.setdefault(index, []).append([copy.deepcopy(self.record),reverseFlag,indexPos,Ninfor])
    
     def outputInfo(self):
         print("the bucket index Length is ",self.bucketIndexLen)
@@ -229,84 +245,73 @@ class sortSequenceClass(object):
     def setKmerLen(self,L):
         self.kmerLen = L
         return
-    def setOutPath(self,path):
-        self.filePath = path
+    def setPath(self,inputPath,outputPath):
+        self.fileInputPath = inputPath
+        self.fileOutputPath = outputPath
         return
     def initialFile(self):
-        fileoutBucketIndex    =  self.filePath + ".index"
-        fileoutBucketCov    =  self.filePath + ".cov"
-        fileoutRCBin        = self.filePath +".rc"
-        fileoutSequenceN = self.filePath +".N"
-        fileoutIndexPos  = self.filePath +".indexPos"
-                            
-        if os.path.exists(fileoutBucketIndex):
-            os.remove(fileoutBucketIndex)
-        if os.path.exists(fileoutBucketCov):
-            os.remove(fileoutBucketCov)      
-        if os.path.exists(fileoutRCBin):
-            os.remove(fileoutRCBin) 
-        if os.path.exists(fileoutSequenceN):
-            os.remove(fileoutSequenceN)
-        if os.path.exists(fileoutIndexPos):
-            os.remove(fileoutIndexPos) 
+        for name in self.fileoutName:
+            file = self.fileOutputPath + "." + name                            
+            if os.path.exists(file):
+                os.remove(file)
+        return
     def outPutSeqence(self):
-        fileoutBucketIndex    =  self.filePath + ".index"
-        fileoutBucketCov    =  self.filePath + ".cov"
-        fileoutRCBin        = self.filePath +".rc"
-        fileoutSequenceN = self.filePath +".N"
-        fileoutIndexPos  = self.filePath +".indexPos"
-                            
-        BucketIndexFile = open(fileoutBucketIndex,"a+")
-        BucketCovFile = open(fileoutBucketCov,"a+")        
-        RCBinFile = open(fileoutRCBin,"a+")       
-        SequenceNFile = open(fileoutSequenceN,"a+")
-        IndexPosFile = open(fileoutIndexPos,"a+") 
-
+        for name in self.fileoutName:
+            file = self.fileOutputPath + "." + name                              
+            self.fileoutName[name] = open(file,"a+")
+        ##store the meta information about read length (1 byte), bucket index length (1 byte) and block size (M) (2 byte).
+        self.fileoutName["index"].write(chr(self.readLen))
+        self.fileoutName["index"].write(chr(self.bucketIndexLen))
+        #self.fileoutName["index"].write(chr(self.blockSize/256))
+        #self.fileoutName["index"].write(chr(self.blockSize%256))
         ###output bucket########
         curren_index = 0
         for index in sorted(self.bucketTable):
             indexBin = self.getIndexMinKmer(index) -curren_index
             curren_index = indexBin + curren_index
-            BucketIndexFile.write(str(indexBin)+"\n")###store index in number
-            BucketCovFile.write(str(self.bucketTable[index]-1)+"\n")###store covrage in number
-        BucketIndexFile.close()
-        BucketCovFile.close()
+            self.fileoutName["index"].write(str(indexBin)+"\n")###store index in number
+            self.fileoutName["cov"].write(str(self.bucketTable[index]-1)+"\n")###store covrage in number
+        self.fileoutName["index"].close()
+        self.fileoutName["cov"].close()
 
-        ###output sequence#######
+        ###output sequence information#######
         IDnum = 1
         RCbin = BitStream()
-
+        Nindex = BitStream()
         for index in sorted(self.sequenceTable.keys()):
             prePos = 0  ###for delta encode index position
             for record in sorted(self.sequenceTable[index],key=self.sort_key):
-                if(len(self.sequenceTable[index])==1):
-                    next
                 if record[1]:
                     self.reversedNum += 1
                 IDnum += 1
                 RCbin.append('0b1' if record[1] else '0b0')
-                IndexPosFile.write(chr(record[2]-prePos))
+                self.fileoutName["indexPos"].write(chr(record[2]-prePos))
                 prePos = record[2]
-        RCbin.tofile(RCBinFile)
+                if record[3]:
+                    Nindex.append('0b1')
+                else:
+                    Nindex.append('0b0')
+        RCbin.tofile(self.fileoutName["rc"]) 
 
-
-        RCBinFile.close()
-        IndexPosFile.close()
+        self.fileoutName["rc"].close()
+        self.fileoutName["indexPos"].close()
+        
 
         ####output N pos and Length information#######
-        Nindex = BitStream()
-        for Nflag in self.sequenceNIndex:
-            Nindex.append('0b1' if Nflag else '0b0')
-        Nindex.tofile(SequenceNFile)
-        for Ninfo in self.sequenceN:
-            prePos = 0
-            for pos in Ninfo[0]:
-                SequenceNFile.write(chr(pos-prePos))
-                prePos = pos
-            for posLen in Ninfo[1]:
-                SequenceNFile.write(chr(posLen-1))
-            SequenceNFile.write("\n")
-        SequenceNFile.close()
+        Nindex.tofile(self.fileoutName["N"])
+        self.fileoutName["N"].write("\n")
+        for index in sorted(self.sequenceTable.keys()):
+            for record in sorted(self.sequenceTable[index],key=self.sort_key):
+                sequenceN = record[3]
+                if sequenceN:
+                    prePos = 0
+                    for pos in sequenceN[1]:
+                        self.fileoutName["N"].write(chr(pos-prePos))
+                        prePos = pos
+                    for posLen in sequenceN[2]:
+                        self.fileoutName["N"].write(chr(posLen-1))
+                    self.fileoutName["N"].write("\n")
+        self.fileoutName["N"].close()
         return
     def getNInRead(self):
         read = self.record['sequence']
@@ -330,12 +335,12 @@ class sortSequenceClass(object):
 
     def replaceN(self):
         if "N" not in self.record['sequence']:
-            self.sequenceNIndex.append(0)
+            self.sequenceNFlag = False
         else:
-            self.sequenceNIndex.append(1)
+            self.sequenceNFlag = True
             pos,length = self.getNInRead()
-            self.sequenceN.append([pos,length])
-            self.record['sequence'] = string.replace(self.record['sequence'], "N", "T")
+            self.sequenceN = (self.sequenceNFlag, pos, length)
+            self.record['sequence'] = string.replace(self.record['sequence'], "N", "C")
         return
 
     def fastq_iter(self, line=None, parse_description=False):
@@ -390,47 +395,120 @@ class sortSequenceClass(object):
         self.buffer = iter(buffer)
         return
     def saveSeqTable(self):
-        for bucketIndex in sorted(self.sequenceTable.keys()):
-            for record in self.sequenceTable[bucketIndex]:
+        for bucketIndex in sorted(self.sequenceTable.keys()):            
+            for record in sorted(self.sequenceTable[bucketIndex],key=self.sort_key):
                 self.sequenceTableSave.setdefault(bucketIndex, []).append([str(record[0]['sequence']),record[2]])
         return
     def compressFile(self):
-        fileoutBucketIndex    =  self.filePath + ".index"
-        fileoutBucketCov    =  self.filePath + ".cov"
-        fileoutSequenceN = self.filePath +".N"
-        fileoutIndexPos  = self.filePath +".indexPos"
-
-        if os.path.exists(fileoutBucketIndex + ".lz"):
-            os.remove(fileoutBucketIndex+ ".lz")
-        if os.path.exists(fileoutBucketCov+ ".lz"):
-            os.remove(fileoutBucketCov+ ".lz")
-        if os.path.exists(fileoutSequenceN+ ".lz"):
-            os.remove(fileoutSequenceN+ ".lz")
-        if os.path.exists(fileoutIndexPos+ ".lz"):
-            os.remove(fileoutIndexPos+ ".lz")
-        comand= "plzip " + fileoutBucketIndex
-        os.system(comand)
-        comand= "plzip " + fileoutBucketCov
-        os.system(comand)
-        comand= "plzip " + fileoutSequenceN
-        os.system(comand)
-        comand= "plzip " + fileoutIndexPos
-        os.system(comand)
+        for name in self.fileoutName:
+            file = self.fileOutputPath + "." + name    
+            if os.path.exists(file + ".lz"):
+                os.remove(file + ".lz")
+            comand= "plzip " + file
+            os.system(comand)
+        return
     def analysisFileSize(self):
-        fileoutBucketIndex    =  self.filePath + ".index.lz"
-        fileoutBucketCov    =  self.filePath + ".cov.lz"
-        fileoutSequenceN = self.filePath +".N.lz"
-        fileoutIndexPos  = self.filePath +".indexPos.lz"
-        fileoutRCBin = self.filePath + ".rc"
-        indexsize=os.path.getsize(fileoutBucketIndex)
-        covsize=os.path.getsize(fileoutBucketCov)
-        possize=os.path.getsize(fileoutIndexPos)
-        Nsize=os.path.getsize(fileoutSequenceN)
-        RCsize=os.path.getsize(fileoutRCBin)
-        filesize=[indexsize,covsize,possize,Nsize,RCsize]
-        print("[index,cov,pos,N,RC]")
-        print(filesize,"sum",sum(filesize),"bytes")
+        for name in self.fileoutName:
+            file = self.fileOutputPath + "." + name    
+            if os.path.exists(file + ".lz"):
+                filesize = os.path.getsize(file + ".lz")
+                print("file %s size is %d", (name, filesize))
+        return
 
-
-
+class decodeBucketClass(object):
+    """docstring for sortSequence"""
+    def __init__(self):
+        self.bucketIndex = [] #bucket index 
+        self.bucketCov = [] # reads number in bucket
+        self.readIndexPos = [] #index positions in each read 
+        self.readrc = sream() # read in forward or backward
+        self.readN = {"flag":sream(),"posLen":[]} # N in read indicate, position and length
+        self.bucketIndexLen = 15
+        self.recordNum = 0
+        self.fileInputPath = ""#indecate the file path
+        self.fileOutputPath = ""#indecate the file path
+        self.readLen = 0
+        self.fileInputName = {"index":"","cov":"","rc":"","N":"","indexPos":""}
+        self.num2dna={0:"A",1:"C",2:"G",3:"T"}
+    def setBucketIndex(self,bucketIndexLen):
+        self.bucketIndexLen = bucketIndexLen
+        return
+    def setPath(self,inputPath,outputPath):
+        self.fileInputPath = inputPath
+        self.fileOutputPath = outputPath
+        return
+    def decompress(self):
+        self.unPlzipFiles()
+        self.decodeIndex()
+        self.decodeCov()
+        self.decodeIndexPos()
+        self.decodeRC()
+        self.decodeN()
+        return
+    def unPlzipFiles(self):
+        for name in self.fileInputName:
+            file = self.fileInputPath + "." + name + ".lz"                           
+            if os.path.exists(file):
+                comand= "plzip -d " + file
+                os.system(comand)
+        return
+    def decodeIndex(self):
+        file = self.fileInputPath + ".index"
+        indexNum = 0
+        f = open(file,'r')
+        # decode meta information about read length (1 byte), bucket index length (1 byte) and block size (M) (2 byte).
+        self.readLen = ord(f.read(1))
+        self.bucketIndexLen = ord(f.read(1))
+        #self.blockSize = ord(f.read(1))*256 + ord(f.read(1))
+        for line in f.readlines():
+            indexNum += int(line)
+            self.bucketIndex.append(''.join(self.num2Base(indexNum)))
+        f.close()
+        return
+    def num2Base(self, indexNum):
+        indexBase = []
+        while indexNum:
+            indexBase.append(self.num2dna[(indexNum & 3)])
+            indexNum = indexNum >> 2
+        while len(indexBase) < self.bucketIndexLen:
+            indexBase.append("A")
+        return indexBase[::-1]
+    def decodeCov(self):
+        file = self.fileInputPath + ".cov"
+        with open(file,'r') as f:
+            for line in f.readlines():
+                readNum = int(line)
+                self.bucketCov.append(readNum)
+        f.close()
+        return
+    def decodeIndexPos(self):
+        file = self.fileInputPath + ".indexPos"
+        with open(file,'r') as f:
+            while 1:
+                byte_s = f.read(1)
+                if not byte_s:
+                    break
+                indexPos = ord(byte_s)
+                self.readIndexPos.append(indexPos)
+        f.close()
+        return
+    def decodeRC(self):
+        file = self.fileInputPath + ".rc"
+        with open(file,'rb') as f:
+            data=f.read()
+            self.readrc.write(data,bytes)
+        f.close()
+        return
+    def decodeN(self):
+        file = self.fileInputPath + ".N"
+        with open(file,'rb') as f:
+            Nflag=f.readline().strip()
+            self.readN["flag"].write(Nflag,bytes)
+            for line in f.readlines():
+                posLen = []
+                for x in line.strip():
+                    posLen.append(ord(x))
+                self.readN["posLen"].append(posLen)
+        f.close()
+        return
 

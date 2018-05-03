@@ -6,8 +6,8 @@ import os
 
 from readFQ import get_chunks,get_chunksData
 import copy
-from bucket import sortSequenceClass
-from deBruijnGraph import graphClass
+from bucket import encodeBucketClass, decodeBucketClass
+from deBruijnGraph import encodeGraphClass, decodeGraphClass
 def args_check(args):
     if not args.encode and not args.decode:
         sys.exit("you must give a -e or -d for encode/decode")
@@ -19,14 +19,15 @@ def args_check(args):
 def main(args):
     args_check(args)
     if args.encode:       
-        sortseq = sortSequenceClass()
+        sortseq = encodeBucketClass()
         sortseq.setBucketIndex(args.kmer)    
         sortseq.setKmerLen(args.kmer)
+        sortseq.setBlockSize(args.block)
         sortseq.setskipZone(0)
         sortseq.getReadLen(args.input)
-        sortseq.setOutPath(args.output)
+        sortseq.setPath(args.input, args.output)
         sortseq.initialFile()
-        graph = graphClass(args.kmer,args.kmer,args.output)
+        graph = encodeGraphClass(args.kmer,args.kmer,args.output)
         graph.setOutPath(args.output)
         graph.initialOutFile()
 
@@ -43,7 +44,6 @@ def main(args):
                         print('process %d records'% sortseq.recordNum)
             ######rebuild table for singleton read
             sortseq.reassigned()    
-            sortseq.replaceN()
             sortseq.outPutSeqence()
             if args.verbose:
                 sortseq.outputInfo()
@@ -66,8 +66,21 @@ def main(args):
         
         del sortseq
         del graph
+    #decode
     else:
-        print("decode coming soon.")
+        decodeBucket = decodeBucketClass()
+        decodeBucket.setBucketIndex(args.kmer)
+        decodeBucket.setPath(args.input, args.output)
+        decodeBucket.decompress()
+
+        decodeGraph = decodeGraphClass(args.kmer,args.kmer,args.input, args.output)
+        decodeGraph.setMetaInfor(decodeBucket.readLen, decodeBucket.bucketIndexLen)
+        decodeGraph.loadBucktData(decodeBucket.bucketIndex, decodeBucket.bucketCov,\
+                                  decodeBucket.readIndexPos,decodeBucket.readrc, decodeBucket.readN)
+        decodeGraph.decompress()
+        del decodeBucket
+        del decodeGraph
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description = 'BdBG')
