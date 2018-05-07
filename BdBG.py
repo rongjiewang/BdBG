@@ -23,7 +23,6 @@ def main(args):
         sortseq.setBucketIndex(args.kmer)    
         sortseq.setKmerLen(args.kmer)
         sortseq.setBlockSize(args.block)
-        sortseq.setskipZone(0)
         sortseq.getReadLen(args.input)
         sortseq.setPath(args.input, args.output)
         sortseq.initialFile()
@@ -45,6 +44,7 @@ def main(args):
             ######rebuild table for singleton read
             sortseq.reassigned()    
             sortseq.outPutSeqence()
+            print("finish encodeBucket")
             if args.verbose:
                 sortseq.outputInfo()
             sortseq.saveSeqTable()
@@ -53,7 +53,6 @@ def main(args):
             print('process %d records'% sortseq.recordNum)
             sortseq.emptyPara()
             graph.encodeBucket()
-            print("finish encodeBucket")
             graph.outputEncodePath()
             print("finish outputEncodePath")
             if args.verbose:
