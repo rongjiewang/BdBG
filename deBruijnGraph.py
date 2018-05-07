@@ -139,15 +139,16 @@ class encodeGraphClass(object):
     def encodeBucket(self):
         seqNum = 1
         for bucketIndex in sorted(self.sequenceTable.keys()):
-            firSeqFlag = True
-            for seq,pos in self.sequenceTable[bucketIndex]:
-                self.encodeSeq(bucketIndex,seq,pos,firSeqFlag)
-                firSeqFlag = False
-                self.addtoGraph(bucketIndex,seq,pos)
+            iterSeq = iter(self.sequenceTable[bucketIndex])
+            seq, pos = next(iterSeq)
+            self.encodeFirSeq(seq, pos)
+            self.addtoGraph(seq, pos)
+            for seq,pos in iterSeq:
+                self.encodeSeq(bucketIndex, seq, pos)
+                self.addtoGraph(seq,pos)
                 if seqNum % 10000 == 0:
                     print('process %d records'% seqNum)
                 seqNum += 1
-
             del self.sequenceTable[bucketIndex]
             self.bucketDict.clear()
         return
@@ -171,85 +172,75 @@ class encodeGraphClass(object):
                 yield base + kmer[1:]
     def Suffix(self,kmer):
         return kmer[1:]
-    def Successors_in_graph(self,bucketIndex,K):
+    def Successors_in_graph(self, K):
         succ = []
         if K in self.bucketDict:
             for base in range(4):
-                if self.bucketDict[K][base] > 1 and self.sufficient(bucketIndex,K,base):
+                if self.bucketDict[K][base] > 1 and self.sufficient(K,base):
                     succ.append(K[1:]+self.num2dna[base])
         return succ
-    def sufficient(self,bucketIndex,K,base):
+    def sufficient(self,K,base):
         totalSum = sum(self.bucketDict[K])
         if self.bucketDict[K][base]/totalSum < self.deleteBifurRatio:
             return False
         return True
-    def encodeSeq(self,bucketIndex,seq,pos, firSeqFlag):
-        if firSeqFlag : # encode the first sequence in bucket
-            for base in seq[:pos]:
-                self.firstSeq.append(self.dna2bit[base])
-            for base in seq[pos+self.kmerLen:]:
-                self.firstSeq.append(self.dna2bit[base])
-        else:
-            #encode the left part
-            encodePos = 0
-            currentPos = 0
-            K = dna.reverse_complement(seq[pos:self.kmerLen+pos])
-            for base in dna.reverse_complement(seq[:pos]):
-                K_next = self.Suffix(K) + base
-                pred = self.Successors_in_graph(bucketIndex,K)
-                if len(pred) == 1:
-                    if pred[0] != K_next:
-                        self.newNodeNum += 1
-                        self.numFlag.append('0b1')
-                        currentPos = encodePos
-                        symbol = self.dna2num[base]
-                        if base > pred[0][-1]:
-                            symbol = self.dna2num[base] - 1
-                        self.encodeSeqPathL.write(self.freq3,symbol)#save the reverse complement sequence
-                    else:
-                        self.simpleNodeNum += 1
-                        self.numFlag.append('0b0')
-                    K = pred[0]
+    def encodeFirSeq(self,seq,pos):# encode the first sequence in bucket
+        for base in seq[:pos]:
+            self.firstSeq.append(self.dna2bit[base])
+        for base in seq[pos+self.kmerLen:]:
+            self.firstSeq.append(self.dna2bit[base])
+        return
+    def encodeSeq(self,bucketIndex,seq,pos):
+        #encode the left part
+        K = dna.reverse_complement(str(bucketIndex))
+        for base in dna.reverse_complement(seq[:pos]):
+            pred = self.Successors_in_graph(K)
+            if len(pred) == 1:
+                if pred[0][-1] != base:
+                    self.newNodeNum += 1
+                    self.numFlag.append('0b1')
+                    symbol = self.dna2num[base]
+                    if base > pred[0][-1]:
+                        symbol = self.dna2num[base] - 1
+                    self.encodeSeqPathL.write(self.freq3,symbol)#save the reverse complement sequence
                 else:
-                    if len(pred) == 0:
-                        self.tipNodeNum += 1
-                        self.encodeSeqPathL.write(self.freq4,self.dna2num[base])
-                    else:
-                        self.bifurNodeNum += 1
-                        self.getFreqs(K)
-                        self.encodeSeqPathL.write(self.freqs,self.dna2num[base])
-                    K = K_next
-                encodePos += 1
-            #encode the right part
-            encodePos = 0
-            currentPos = 0
-            K = seq[(self.indexLen+pos-self.kmerLen):(self.indexLen+pos)]
-            for base in seq[pos+self.indexLen:]:
-                K_next = self.Suffix(K) + base
-                succ = self.Successors_in_graph(bucketIndex,K)
-                if len(succ) == 1:
-                    if succ[0] != K_next:
-                        self.newNodeNum += 1
-                        self.numFlag.append('0b1')
-                        currentPos = encodePos
-                        symbol = self.dna2num[base]
-                        if base > succ[0][-1]:
-                            symbol = self.dna2num[base] - 1
-                        self.encodeSeqPathR.write(self.freq3, symbol)
-                    else:
-                        self.simpleNodeNum += 1
-                        self.numFlag.append('0b0')
-                    K = succ[0]
+                    self.simpleNodeNum += 1
+                    self.numFlag.append('0b0')
+                K = pred[0]
+            else:
+                if len(pred) == 0:
+                    self.tipNodeNum += 1
+                    self.encodeSeqPathL.write(self.freq4,self.dna2num[base])
                 else:
-                    if len(succ) == 0:
-                        self.tipNodeNum += 1
-                        self.encodeSeqPathR.write(self.freq4, self.dna2num[base])
-                    else:
-                        self.bifurNodeNum += 1
-                        self.getFreqs(K)
-                        self.encodeSeqPathR.write(self.freqs, self.dna2num[base])
-                    K = K_next
-                encodePos += 1 
+                    self.bifurNodeNum += 1
+                    self.getFreqs(K)
+                    self.encodeSeqPathL.write(self.freqs,self.dna2num[base])
+                K = self.Suffix(K) + base
+        #encode the right part
+        K = str(bucketIndex)
+        for base in seq[pos+self.indexLen:]:
+            succ = self.Successors_in_graph(K)
+            if len(succ) == 1:
+                if succ[0][-1] != base:
+                    self.newNodeNum += 1
+                    self.numFlag.append('0b1')
+                    symbol = self.dna2num[base]
+                    if base > succ[0][-1]:
+                        symbol = self.dna2num[base] - 1
+                    self.encodeSeqPathR.write(self.freq3, symbol)
+                else:
+                    self.simpleNodeNum += 1
+                    self.numFlag.append('0b0')
+                K = succ[0]
+            else:
+                if len(succ) == 0:
+                    self.tipNodeNum += 1
+                    self.encodeSeqPathR.write(self.freq4, self.dna2num[base])
+                else:
+                    self.bifurNodeNum += 1
+                    self.getFreqs(K)
+                    self.encodeSeqPathR.write(self.freqs, self.dna2num[base])
+                K = self.Suffix(K) + base
         return
     def getFreqs(self,K):
         for base in range(4):
@@ -266,7 +257,7 @@ class encodeGraphClass(object):
                   self.newNodeNum + self.tipNodeNum + self.bifurNodeNum)))
             print("the numbers of bifurNodeNum is %d, take up %.2f%%"%(self.bifurNodeNum,self.bifurNodeNum*100.0/(self.simpleNodeNum+\
                   self.newNodeNum + self.tipNodeNum + self.bifurNodeNum)))
-    def addtoGraph(self,bucketIndex,seq,pos):
+    def addtoGraph(self,seq,pos):
         for kmer in self.getKmerR(seq,pos):
             if str(kmer[:-1]) not in self.bucketDict:
               self.bucketDict.setdefault(str(kmer[:-1]), [1,1,1,1])
@@ -344,7 +335,7 @@ class decodeGraphClass(object):
         self.bucketCov = [] # reads number in bucket
         self.readIndexPos = [] #index positions in each read 
         self.readrc = sream() # read in forward or backward
-        self.readN = {"flag":sream(),"posLen":[]} # N in read indicate, position and length
+        self.readN = {"flag":sream(), "pos":[], "l":[]} # N in read indicate, number, position and length
         self.numFlag = sream() #new nodes indicate
     def setMetaInfor(self, readLen, bucketIndexLen):
         self.readLen = readLen
@@ -354,7 +345,7 @@ class decodeGraphClass(object):
     def loadBucktData(self,bucketIndex, bucketCov, readIndexPos, readrc, readN):
         self.bucketIndex = bucketIndex #bucket index 
         self.bucketCov = bucketCov # reads number in bucket
-        self.readIndexPos = readIndexPos #index positions in each read 
+        self.readIndexPos = readIndexPos #index positions in each read
         self.readrc = readrc # read in forward or backward
         self.readN = readN # N in read indicate, position and length
     def openFileLeft(self):
@@ -379,15 +370,6 @@ class decodeGraphClass(object):
     def initialOutFile(self):
         if os.path.exists(self.outFileName):
             os.remove(self.outFileName)
-    def outputEncodePath(self):
-        self.bitoutL.close()
-        self.bitoutR.close()
-        fileoutFirstSeq = self.outPutPath + ".firSeq"
-        FirstSeqFile = open(fileoutFirstSeq,"a+")
-        self.firstSeq.tofile(FirstSeqFile)
-        fileoutNumFlag = self.outPutPath + ".numFlag"
-        numFlagFile = open(fileoutNumFlag,"a+")
-        self.numFlag.tofile(numFlagFile)
     def twobit_repr(self,ch):
         x = 0 if ch.upper() == 'A'  else  1 if ch.upper() == 'C' else 2 if ch.upper() == 'G' else 3
         return x
@@ -486,15 +468,11 @@ class decodeGraphClass(object):
         self.decodeNumFlag()
         file = self.inPutPath + ".firSeq"
         firSeqFile = bitio.bit_open(file, "r")
-        while self.bucketIndex:
+        firSeqLoadLen = (self.readLen-self.indexLen)*2
+        for bucketIndex in self.bucketIndex:
             self.bucketDict.clear() #initial the bucketDiction with nothing
-            self.sequence = ""
-            bucketIndex = self.bucketIndex.pop(0)
-            seq = firSeqFile.read_bits((self.readLen-self.indexLen)*2)
-            sequence = self.num2Base(seq)
             indexPos = self.readIndexPos.pop(0)
-            sequence.insert(indexPos, bucketIndex)
-            self.sequence = ''.join(sequence)
+            self.sequence = self.decompressFirSeq(firSeqFile, bucketIndex, indexPos, firSeqLoadLen)
             self.addtoGraph(self.sequence, indexPos)
             self.outPutSeqence()
             readNum = 0
@@ -505,10 +483,20 @@ class decodeGraphClass(object):
                 self.addtoGraph(self.sequence, indexPos)
                 self.outPutSeqence()
                 readNum += 1
+        print("simpleNodeNum is %d"% self.simpleNodeNum)
+        print("newNodeNum is %d"% self.newNodeNum)
+        print("tipNodeNum is %d"% self.tipNodeNum)
+        print("bifurNodeNum is %d"% self.bifurNodeNum)
         firSeqFile.close()
         self.outFile.close()
         print("decoding success!")
         return
+    def decompressFirSeq(self, firSeqFile, bucketIndex, indexPos, firSeqLoadLen):
+        seq = firSeqFile.read_bits(firSeqLoadLen)
+        sequence = self.num2Base(seq)
+        sequence.insert(indexPos, bucketIndex)
+        sequence = ''.join(sequence)
+        return sequence
     def num2Base(self, indexNum):
         seq = []
         while indexNum:
@@ -526,11 +514,10 @@ class decodeGraphClass(object):
     def replaceN(self):
         if self.readN["flag"].read(bool,1)[0]:
             prePos = 0
-            N = self.readN["posLen"].pop(0)
-            Nnum = int(len(N)/2)
-            for i in range(Nnum):
-                self.sequence = self.sequence[:(N[i]+prePos)] + "N"*int(N[i+Nnum]+1) + self.sequence[(N[i]+prePos+N[i+Nnum]+1):]
-                prePos += N[i]
+            for pos, length in zip(self.readN["pos"].pop(0), self.readN["l"].pop(0)):
+                pos += prePos
+                self.sequence = self.sequence[:pos] + "N"*int(length+1) + self.sequence[(pos+length+1):]
+                prePos = pos
         return
     def decompressGraph(self,bucketIndex, indexPos):
         sequence = bucketIndex
@@ -541,20 +528,24 @@ class decodeGraphClass(object):
             pred = self.Successors_in_graph(K)
             if len(pred) == 1:
                 if self.numFlag.read(bool,1)[0]: # New node:
+                    self.newNodeNum += 1
                     symbol = self.decodeSeqPathL.read(self.freq3)
                     base = self.num2dna[symbol]
                     if base >= pred[0][-1]:
                         base = self.num2dna[symbol+1]
                 else:
+                    self.simpleNodeNum += 1
                     base = pred[0][-1]
                 K = pred[0]
             else:
                 if len(pred) == 0:
+                    self.tipNodeNum += 1
                     symbol = self.decodeSeqPathL.read(self.freq4)
                     base = self.num2dna[symbol]
                 else:
+                    self.bifurNodeNum += 1
                     self.getFreqs(K)
-                    symblol = self.decodeSeqPathL.read(self.freqs)
+                    symbol = self.decodeSeqPathL.read(self.freqs)
                     base = self.num2dna[symbol]
                 K = self.Suffix(K) + base
             sequence = self.recdna[base] + sequence
@@ -564,18 +555,22 @@ class decodeGraphClass(object):
             succ = self.Successors_in_graph(K)
             if len(succ) == 1:
                 if self.numFlag.read(bool,1)[0]: # New node
+                    self.newNodeNum += 1
                     symbol = self.decodeSeqPathR.read(self.freq3)
                     base = self.num2dna[symbol]
                     if base >= succ[0][-1]:
                         base = self.num2dna[symbol+1]  
                 else:
+                    self.simpleNodeNum += 1
                     base = succ[0][-1]
                 K = succ[0]
             else:
                 if len(succ) == 0:
+                    self.tipNodeNum += 1
                     symbol = self.decodeSeqPathR.read(self.freq4)
                     base = self.num2dna[symbol]
                 else:
+                    self.bifurNodeNum += 1
                     self.getFreqs(K)
                     symbol = self.decodeSeqPathR.read(self.freqs)
                     base = self.num2dna[symbol]
