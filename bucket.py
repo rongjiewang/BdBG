@@ -17,6 +17,7 @@ from screed import Record
 from utils import to_str
 import copy
 import struct
+import math
 
 class encodeBucketClass(object):
     """docstring for sortSequence"""
@@ -25,6 +26,7 @@ class encodeBucketClass(object):
         self.bucketTable = {} ### buckets index and it's reads number
         self.sequenceTable = {} ####bucket as diction index, within bucket include (seq,reverseFlag,indexPos) 
         self.sequenceTableSave = {}
+        self.read = {'sequence':"", 'reverse':"", 'indexPos':"", 'N':""}
         self.kmerLen = 15
         self.bucketIndexLen = 15
         self.blockSize = 1024
@@ -33,13 +35,13 @@ class encodeBucketClass(object):
         self.onsies = 0 ####the number of bucket which only have one seq
         self.leftOnesies = 0 ## the number onesies after re-assigned
         self.sequenceN = []  ### the info of N in read  present by (readID,pos,len)
-        self.reversedNum = 0
+        self.reversedNum = 0 ##total reverse number
         self.skipZone = 0
-        self.record = Record()
+        self.record = Record() #read record
         self.buffer = None
         self.sequenceNFlag = False #indicate if the seq include N
-        self.fileInputPath = ""#indecate the file path
-        self.fileOutputPath = ""#indecate the file path
+        self.fileInputPath = ""#indicate the input path
+        self.fileOutputPath = ""#indicate the output path
         self.readLen = 0
         self.fileoutName = {"index":"","cov":"","rc":"","N":"","indexPos":""}
     def emptyPara(self):
@@ -201,34 +203,33 @@ class encodeBucketClass(object):
         return minKmer,reverseFlag,indexPos
     def sortSeqence(self):
         """Run over the given file and sort the sequences."""
+        if len(self.record['sequence']) != self.readLen:
+            print("Error, all the reads must have the same length!")
+            os._exit(0)
         index,reverseFlag,indexPos = self.getMostCommenIndex()
         self.bucketTable[index] = self.bucketTable.get(index,0) + 1
         if reverseFlag:
-            self.record['sequence'] = screed.rc(str(self.record['sequence']))
-        if self.sequenceNFlag:
-            self.sequenceTable.setdefault(index, []).append([copy.deepcopy(self.record),reverseFlag,indexPos, self.sequenceN])
+            self.read['sequence'] = copy.deepcopy(screed.rc(str(self.record['sequence'])))
         else:
-            self.sequenceTable.setdefault(index, []).append([copy.deepcopy(self.record),reverseFlag,indexPos, self.sequenceNFlag])
+            self.read['sequence'] = copy.deepcopy(str(self.record['sequence']))
+        self.read['reverse'] = reverseFlag
+        self.read['indexPos'] = indexPos
+        self.sequenceTable.setdefault(index, []).append([copy.deepcopy(self.read)])
+        return
     def reassigned(self): 
         for countIndex in self.bucketTable.keys():
             if self.bucketTable[countIndex] == 1:
+                if self.sequenceTable[countIndex][0][0]['reverse']:##recover the raw sequence
+                    self.record['sequence'] = copy.deepcopy(screed.rc(str(self.sequenceTable[countIndex][0][0]['sequence'])))
+                else:
+                    self.record['sequence'] = copy.deepcopy(self.sequenceTable[countIndex][0][0]['sequence'])
+                self.read['N'] =  copy.deepcopy(self.sequenceTable[countIndex][0][0]['N'])## take N infor for reassign
                 del self.mutiDict[countIndex]
                 del self.bucketTable[countIndex]
-                record = self.sequenceTable[countIndex][0]
                 del self.sequenceTable[countIndex]
-                self.record = record[0]
-                if record[1]:##recover the raw sequence
-                    self.record['sequence'] = screed.rc(str(self.record['sequence']))                
-                Ninfor = record[3]                
-                index,reverseFlag,indexPos = self.getMostCommenIndex()                              
-                self.bucketTable[index] = self.bucketTable.get(index,0) + 1
-                if reverseFlag:##recover the raw sequence
-                    self.record['sequence'] = screed.rc(str(self.record['sequence'])) 
-                self.sequenceTable.setdefault(index, []).append([copy.deepcopy(self.record),reverseFlag,indexPos,Ninfor])
-   
+                self.sortSeqence()
     def outputInfo(self):
         print("the bucket index Length is ",self.bucketIndexLen)
-        print("the kmer index Length is ",self.kmerLen)
         for countIndex in self.bucketTable.keys():
             if self.bucketTable[countIndex] == 1:
                 self.onsies += 1
@@ -240,7 +241,8 @@ class encodeBucketClass(object):
         self.records = screed.open(fileName)
 
     def sort_key(self,seq):
-        return seq[2],seq[0].sequence[(seq[2]+self.kmerLen-1):]
+        seq = seq[0]
+        return seq['indexPos'],seq['sequence'][(seq['indexPos']+self.kmerLen):]
 
     def setKmerLen(self,L):
         self.kmerLen = L
@@ -259,11 +261,15 @@ class encodeBucketClass(object):
         for name in self.fileoutName:
             file = self.fileOutputPath + "." + name                              
             self.fileoutName[name] = open(file,"a+")
-        ##store the meta information about read length (1 byte), bucket index length (1 byte) and block size (M) (2 byte).
+
+        ##store the meta information about read length (1 byte), bucket index length (1 byte) and reads number (4 byte).
         self.fileoutName["index"].write(chr(self.readLen))
         self.fileoutName["index"].write(chr(self.bucketIndexLen))
-        #self.fileoutName["index"].write(chr(self.blockSize/256))
-        #self.fileoutName["index"].write(chr(self.blockSize%256))
+        self.fileoutName["index"].write(chr(self.recordNum/16777216))
+        self.fileoutName["index"].write(chr(self.recordNum%16777216/65536))
+        self.fileoutName["index"].write(chr(self.recordNum%16777216%65536/256))
+        self.fileoutName["index"].write(chr(self.recordNum%256))
+
         ###output bucket########
         curren_index = 0
         for index in sorted(self.bucketTable):
@@ -275,44 +281,43 @@ class encodeBucketClass(object):
         self.fileoutName["cov"].close()
 
         ###output sequence information#######
-        IDnum = 1
         RCbin = BitStream()
         Nindex = BitStream()
         for index in sorted(self.sequenceTable.keys()):
             prePos = 0  ###for delta encode index position
-            for record in sorted(self.sequenceTable[index],key=self.sort_key):
-                if record[1]:
+            for read in sorted(self.sequenceTable[index],key=self.sort_key):
+                read = read[0]
+                if read['reverse']:
                     self.reversedNum += 1
-                IDnum += 1
-                RCbin.append('0b1' if record[1] else '0b0')
-                self.fileoutName["indexPos"].write(chr(record[2]-prePos))
-                prePos = record[2]
-                if record[3]:
+                    RCbin.append('0b1')
+                else:
+                    RCbin.append('0b0')
+                self.fileoutName["indexPos"].write(chr(read['indexPos']-prePos))
+                prePos = read['indexPos']
+                if read['N']:
                     Nindex.append('0b1')
                 else:
                     Nindex.append('0b0')
         RCbin.tofile(self.fileoutName["rc"]) 
-
         self.fileoutName["rc"].close()
         self.fileoutName["indexPos"].close()
         
-
         ####output N pos and Length information#######
         Nindex.tofile(self.fileoutName["N"])
-        self.fileoutName["N"].write("\n")
         for index in sorted(self.sequenceTable.keys()):
-            for record in sorted(self.sequenceTable[index],key=self.sort_key):
-                sequenceN = record[3]
-                if sequenceN:
+            for read in sorted(self.sequenceTable[index],key=self.sort_key):
+                read = read[0]
+                if read['N']:
+                    self.fileoutName["N"].write(chr(len(read['N'][1]))) ## N numbers
                     prePos = 0
-                    for pos in sequenceN[1]:
+                    for pos in read['N'][1]:
                         self.fileoutName["N"].write(chr(pos-prePos))
                         prePos = pos
-                    for posLen in sequenceN[2]:
+                    for posLen in read['N'][2]:
                         self.fileoutName["N"].write(chr(posLen-1))
-                    self.fileoutName["N"].write("\n")
         self.fileoutName["N"].close()
         return
+
     def getNInRead(self):
         read = self.record['sequence']
         pos = []
@@ -335,11 +340,10 @@ class encodeBucketClass(object):
 
     def replaceN(self):
         if "N" not in self.record['sequence']:
-            self.sequenceNFlag = False
+            self.read['N'] = False
         else:
-            self.sequenceNFlag = True
             pos,length = self.getNInRead()
-            self.sequenceN = (self.sequenceNFlag, pos, length)
+            self.read['N'] = (True, pos, length)
             self.record['sequence'] = string.replace(self.record['sequence'], "N", "C")
         return
 
@@ -373,7 +377,6 @@ class encodeBucketClass(object):
             while line and not line.startswith('+') and not line.startswith('#'):
                 sequence.append(line)
                 line = to_str(self.buffer.next())
-
             self.record['sequence'] = ''.join(sequence)
 
             # Extract the quality lines
@@ -385,7 +388,6 @@ class encodeBucketClass(object):
                 quality.append(line)
                 aclen += len(line)
                 line = to_str(self.buffer.next())
-
             self.record['quality'] = ''.join(quality)
             if len(self.record['sequence']) != len(self.record['quality']):
                 raise IOError('sequence and quality strings must be '
@@ -395,9 +397,11 @@ class encodeBucketClass(object):
         self.buffer = iter(buffer)
         return
     def saveSeqTable(self):
-        for bucketIndex in sorted(self.sequenceTable.keys()):            
-            for record in sorted(self.sequenceTable[bucketIndex],key=self.sort_key):
-                self.sequenceTableSave.setdefault(bucketIndex, []).append([str(record[0]['sequence']),record[2]])
+        for bucketIndex in sorted(self.sequenceTable.keys()):
+            iterseq = iter(sorted(self.sequenceTable[bucketIndex],key=self.sort_key))     
+            for read in sorted(self.sequenceTable[bucketIndex],key=self.sort_key):
+                read = read[0]
+                self.sequenceTableSave.setdefault(bucketIndex, []).append([str(read['sequence']),read['indexPos']])
         return
     def compressFile(self):
         for name in self.fileoutName:
@@ -422,14 +426,15 @@ class decodeBucketClass(object):
         self.bucketCov = [] # reads number in bucket
         self.readIndexPos = [] #index positions in each read 
         self.readrc = sream() # read in forward or backward
-        self.readN = {"flag":sream(),"posLen":[]} # N in read indicate, position and length
+        self.readN = {"flag":sream(), "pos":[], "l":[]} # N in read indicate, position and length
         self.bucketIndexLen = 15
         self.recordNum = 0
         self.fileInputPath = ""#indecate the file path
         self.fileOutputPath = ""#indecate the file path
         self.readLen = 0
         self.fileInputName = {"index":"","cov":"","rc":"","N":"","indexPos":""}
-        self.num2dna={0:"A",1:"C",2:"G",3:"T"}
+        self.num2dna = {0:"A",1:"C",2:"G",3:"T"}
+        self.readNum = 0
     def setBucketIndex(self,bucketIndexLen):
         self.bucketIndexLen = bucketIndexLen
         return
@@ -459,7 +464,7 @@ class decodeBucketClass(object):
         # decode meta information about read length (1 byte), bucket index length (1 byte) and block size (M) (2 byte).
         self.readLen = ord(f.read(1))
         self.bucketIndexLen = ord(f.read(1))
-        #self.blockSize = ord(f.read(1))*256 + ord(f.read(1))
+        self.readNum = ord(f.read(1))*16777216 + ord(f.read(1))*65536 + ord(f.read(1))*256 + ord(f.read(1))
         for line in f.readlines():
             indexNum += int(line)
             self.bucketIndex.append(''.join(self.num2Base(indexNum)))
@@ -502,13 +507,19 @@ class decodeBucketClass(object):
     def decodeN(self):
         file = self.fileInputPath + ".N"
         with open(file,'rb') as f:
-            Nflag=f.readline().strip()
-            self.readN["flag"].write(Nflag,bytes)
-            for line in f.readlines():
-                posLen = []
-                for x in line.strip():
-                    posLen.append(ord(x))
-                self.readN["posLen"].append(posLen)
+            Nflag=f.read(int(math.ceil(self.readNum/8.0)))
+            self.readN["flag"].write(Nflag,bytes)## weather the read contain "N"
+            byte_s = f.read(1) ### the number potions "N" the read have.
+            while byte_s != "":
+                pos = []
+                length = []
+                for i in range(ord(byte_s)):
+                    pos.append(ord(f.read(1)))
+                self.readN["pos"].append(pos)
+                for i in range(ord(byte_s)):
+                    length.append(ord(f.read(1)))
+                self.readN["l"].append(length)
+                byte_s = f.read(1)
         f.close()
         return
 
