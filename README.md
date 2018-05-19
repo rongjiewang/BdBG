@@ -39,5 +39,11 @@ Encode reads from `test.fastq` file, using signtature length of `15` and `1024` 
 Decode reads from `output` files and save the DNA reads to `input.dna` file.
 
     python BdBG.py -d -i output -o input.dna
+    
+### License
+All the source code is licensed under the MIT license.
+
+For more information see the LICENSE file.
+
 ### Contact
 If you have any question, please contact the author rjwang.hit@gmail.com
