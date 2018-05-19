@@ -24,21 +24,27 @@ in one of the two modes:
 * `-d` - decoding,
 
 with available options:
-* `-i<file>` - input file,
+* `-i<file>` - input.fastq file,
 * `-o<f>` - output files prefix,
+* `-p` - paired-end file flag,
+* `-1<file>` - input_1.fastq file,
+* `-2<file>` - input_2.fastq file,
 * `-k<n>` - k-mer length, default: `15`,
-* `-b<n>` - FASTQ input buffer size (in MB), default: `1024`,
 * `-v` - verbose mode, default: `false`.
 
 
 ### Examples
-Encode reads from `test.fastq` file, using signtature length of `15` and `1024` MB FASTQ block buffer, saving output to `output ` files:
+Encode single-end reads with `test.fastq` file, output with prefix `encode_test`:
 
-    python BdBG.py -e -i test.fastq -o output 
+    python BdBG.py -e -i test.fastq -o encode_test
     
-Decode reads from `output` files and save the DNA reads to `input.dna` file.
+Encode paired-end reads with `test_1.fastq` file and `test_2.fastq` file, output with prefix `encode_test`:
 
-    python BdBG.py -d -i output -o input.dna
+    python BdBG.py -e -p -1 test_1.fastq -2 test_2.fastq -o encode_test 
+    
+Decode reads from output prefix `encode_test` files and save the DNA reads with prefix `decode_test`.
+
+    python BdBG.py -d -i encode_test -o decod_test
     
 ### License
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
