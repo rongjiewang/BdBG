@@ -41,9 +41,7 @@ Decode reads from `output` files and save the DNA reads to `input.dna` file.
     python BdBG.py -d -i output -o input.dna
     
 ### License
-All the source code is licensed under the MIT license.
-
-For more information see the LICENSE file.
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
 
 ### Contact
 If you have any question, please contact the author rjwang.hit@gmail.com
