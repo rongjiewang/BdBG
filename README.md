@@ -3,21 +3,21 @@ BdBG - BdBG: a bucket-based method for bacterial genome sequencing data compress
 
 Currently, BdBG works with FASTQ files and supports only compression of DNA stream, discarding the read names and qualities. By compressing only the DNA stream, it can reduce the bacterial genome sequencing data from 8 bits per base to 0.23 bits per base, achieving compression ratio 2.875%.
 
-# Install
+## Install
 This is a step by step instruction for installing the BdBG.
 ## Requirements for python 2.7* modules
 * Screed
 * numpy
 * bitstring
 
-## Command to install
+### Command to install
     pip install -r requirements.txt
 
-# Usage
+## Usage
 
 DNA stream compression using BdBG is a 2 stage process, consisting of bucket and de Bruijn raph subprograms in chain. However, to decompress the DNA stream, only de Bruijn graph is needed.
 
-## BdBG.py
+### BdBG.py
 
 BdBG.py first performs DNA records clustering into separate bucket representing signatures. As an input it takes a single or a set of FASTQ files and stores the output to five separate files: `*.index.lz` file, containing encoded bucktes index stream, `*.cov.lz` file, containing the number of reads in the buckets, `*.indexPos.lz` file, containing the bucket index positons in each read, `*.rc` file, containing wether the read in forward or backward, and `*.N.lz` file, containing the character N postions and length in the reads.
 
@@ -56,8 +56,11 @@ Decode reads from output prefix `encode_test` files and save the DNA reads with 
 
     python BdBG.py -d -i encode_test -o decod_test
     
-### License
+## License
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details
 
-### Contact
+## Acknowledgments
+The code of BdBG was based in part on the source code of the Arithmetic package [Nayuki, 2016](https://github.com/nayuki/Reference-arithmetic-coding).
+
+## Contact
 If you have any question, please contact the author rjwang.hit@gmail.com
