@@ -5,11 +5,10 @@ Currently, BdBG works with FASTQ files and supports only compression of DNA stre
 
 # Install
 This is a step by step instruction for installing the BdBG.
-## Requirements
--Python 2.7.*
--Screed
--numpy
--bitstring
+## Requirements for python 2.7* modules
+* Screed
+* numpy
+* bitstring
 
 ## Command to install
     pip install -r requirements.txt
