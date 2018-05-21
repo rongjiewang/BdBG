@@ -23,6 +23,8 @@ BdBG.py first performs DNA records clustering into separate bucket representing 
 
 And then, BdBG.py performs encoding the read as a path in the dynamic de Bruijn graph in each bucket independently. It stores the output to four separate files: `*.bifurL` file, containing encode the read left bifurcation path from the beginning 'anchor' k-mer, `*.bifurR` file, containing encode the read right bifurcation path from the beginning 'anchor' k-mer, `*.firSeq.lz` file, containing the first reads in the buckets, and `*.numFlag.lz` file, containing the New nodes positions flag in the bifuraction list.
 
+There are a option parameter '-u' to unchange the raw reads orders by extra adding a `*.order.lz` file to compressed files. The parameter '-u' default is false. However, when encode paired-end files, default value become ture, beceause we have to keep the paired information for paired-end reads. 
+
 
 ### Command line
 BdBG.py is run from the command prompt:
@@ -39,7 +41,9 @@ with available options:
 * `-p` - paired-end file flag,
 * `-1<file>` - input_1.fastq file,
 * `-2<file>` - input_2.fastq file,
-* `-k<n>` - k-mer length, default: `15`,
+* `-u` - unchange the reads order, default:false, \
+         if encode paired-end files, default:ture,
+* `-k<n>` - k-mer size, default: `15`,
 * `-v` - verbose mode, default: `false`.
 
 
@@ -47,6 +51,10 @@ with available options:
 Encode single-end reads with `test.fastq` file, output with prefix `encode_test`:
 
     python BdBG.py -e -i test.fastq -o encode_test
+    
+Encode single-end reads with `test.fastq` file and keep the raw read orders, output with prefix `encode_test`:
+
+    python BdBG.py -e -l -i test.fastq -o encode_test
     
 Encode paired-end reads with `test_1.fastq` file and `test_2.fastq` file, output with prefix `encode_test`:
 
