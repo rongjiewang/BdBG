@@ -53,7 +53,7 @@ Encode single-end reads with `test.fastq` file, output with prefix `encode_test`
     
 Encode single-end reads with `test.fastq` file and keep the raw read orders, output with prefix `encode_test`:
 
-    python BdBG.py -e -l -i test.fastq -o encode_test
+    python BdBG.py -e -u -i test.fastq -o encode_test
     
 Encode paired-end reads with `test_1.fastq` file and `test_2.fastq` file, output with prefix `encode_test`:
 
