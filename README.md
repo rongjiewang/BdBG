@@ -41,8 +41,7 @@ with available options:
 * `-p` - paired-end file flag,
 * `-1<file>` - input_1.fastq file,
 * `-2<file>` - input_2.fastq file,
-* `-u` - unchange the reads order, default:false, \
-         if encode paired-end files, default:ture,
+* `-u` - unchange the reads order, default:false, if encode paired-end files, default:ture,
 * `-k<n>` - k-mer size, default: `15`,
 * `-v` - verbose mode, default: `false`.
 
