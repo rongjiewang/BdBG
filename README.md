@@ -65,13 +65,19 @@ Decode reads from output prefix `encode_test` files and save the DNA reads with 
     
 ### Verify the compress & decompress correctness
 For verify the correctness, first extarct dna sequence from fastq file, by using the file ./scripts/extract_dna_from_fastq.sh.
-    sh ./scripts/extract_dna_from_fastq.sh input.fastq input.dna  
+
+    sh ./scripts/extract_dna_from_fastq.sh input.fastq input.dna 
+    
 Then, sort the input.dna and output.dna. Last, check the difference beween input.dna and output.dna.
+
     sort input.dna > sorted_input.dna
     sort ouput.dna > sorted_output.dna
     diff sorted_input.dna sorted_output.dna
+    
 If compress the raw sequence with parameter '-l', which means to unchange the reads order, you can compare the input.dna and output.dna directly.
+
     diff input.dna output.dna
+    
 If there nothing out in creeen with shell command diff, proof that the compresstion & decompression process is correct.
     
 ## License
