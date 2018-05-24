@@ -1,88 +1,81 @@
-from __future__ import print_function
+"""MIT License
+
+Copyright (c) 2018 rongjiewang
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE."""
 
 import sys
 import argparse
-import os
 
-from readFQ import get_chunks,get_chunksData
-import copy
 from bucket import encodeBucketClass, decodeBucketClass
 from deBruijnGraph import encodeGraphClass, decodeGraphClass
+
 def args_check(args):
     if not args.encode and not args.decode:
         sys.exit("you must give a -e or -d for encode/decode")
-    if not args.input:
-        sys.exit("you must give a file input with -i input")
+    if not args.input and not args.paired:
+        sys.exit("you must give a file input with -i input for single end data or -p -1 input1 -2 input2 for paired-end data")
     if not args.output:
-        sys.exit("you must give a file output with -o output") 
+        sys.exit("you must give a file output with -o output")
+    return 
 
 def main(args):
     args_check(args)
+    #encode
     if args.encode:       
-        sortseq = encodeBucketClass()
-        sortseq.setBucketIndex(args.kmer)    
-        sortseq.setKmerLen(args.kmer)
-        sortseq.setBlockSize(args.block)
-        sortseq.getReadLen(args.input)
-        sortseq.setPath(args.input, args.output)
-        sortseq.initialFile()
-        graph = encodeGraphClass(args.kmer,args.kmer,args.output)
-        graph.setOutPath(args.output)
-        graph.initialOutFile()
+        en_bucket = encodeBucketClass(args.input, args.output, args.paired, \
+                                        args.input1, args.input2, args.kmer, args.lossless, args.verbose)
+        en_bucket.encode()
 
-        #sortseq.openInput(filename)
-        for start, block in get_chunks(args.input,args.block):
-            data = get_chunksData(args.input, start, block).split('\n')
-            sortseq.setBuffer(data)
-            for record in sortseq.fastq_iter():
-                sortseq.replaceN()
-                sortseq.sortSeqence()
-                sortseq.recordNum += 1
-                if args.verbose:
-                    if sortseq.recordNum % 10000 == 0:
-                        print('process %d records'% sortseq.recordNum)
-            ######rebuild table for singleton read
-            sortseq.reassigned()    
-            sortseq.outPutSeqence()
-            print("finish encodeBucket")
-            if args.verbose:
-                sortseq.outputInfo()
-            sortseq.saveSeqTable()
-            del sortseq.mutiDict
-            graph.setSequenceTable(sortseq.sequenceTableSave)
-            print('process %d records'% sortseq.recordNum)
-            sortseq.emptyPara()
-            graph.encodeBucket()
-            graph.outputEncodePath()
-            print("finish outputEncodePath")
-            if args.verbose:
-                graph.outputNodeInfo()
-            graph.emptyPara()
+        en_graph = encodeGraphClass(args.output, args.paired, args.kmer, \
+                                        args.verbose, en_bucket.sequenceTableSave)
+        del en_bucket
 
-    ###compress bucket meta data
-        sortseq.compressFile()
-        graph.compressFile()
-        
-        del sortseq
-        del graph
+        en_graph.encode()
+
+        del en_graph
+
+        sys.exit()
+
     #decode
     else:
-        decodeBucket = decodeBucketClass()
-        decodeBucket.setBucketIndex(args.kmer)
-        decodeBucket.setPath(args.input, args.output)
-        decodeBucket.decompress()
+        de_bucket = decodeBucketClass(args.input, args.output, args.verbose)
 
-        decodeGraph = decodeGraphClass(args.kmer,args.kmer,args.input, args.output)
-        decodeGraph.setMetaInfor(decodeBucket.readLen, decodeBucket.bucketIndexLen)
-        decodeGraph.loadBucktData(decodeBucket.bucketIndex, decodeBucket.bucketCov,\
-                                  decodeBucket.readIndexPos,decodeBucket.readrc, decodeBucket.readN)
-        decodeGraph.decompress()
-        del decodeBucket
-        del decodeGraph
+        de_bucket.decode()
 
+        de_graph = decodeGraphClass(args.input, args.output, de_bucket.paired, de_bucket.readNum,\
+                                    de_bucket.bucketIndexLen, de_bucket.lossless, de_bucket.verbose)
+
+        de_graph.loadBucktData(de_bucket.bucketIndex, de_bucket.bucketCov, de_bucket.readIndexPos,\
+                                de_bucket.readrc, de_bucket.readN, de_bucket.readLen, de_bucket.readOrder)
+        del de_bucket
+
+        de_graph.decode()
+
+        del de_graph
+
+        sys.exit()
 
 if __name__ == '__main__':
+
     parser = argparse.ArgumentParser(description = 'BdBG')
+
     parser.add_argument("-e", "--encode",
                     help="encoding",action="store_true")
     parser.add_argument("-d", "--decode",
@@ -91,13 +84,22 @@ if __name__ == '__main__':
                     help="inputFile")
     parser.add_argument("-o", "--output",
                     help="outputFile")
+    parser.add_argument("-p", "--paired",
+                    help="paired-end flag",action="store_true")
+    parser.add_argument("-1", "--input1",
+                    help="paired-end file1")
+    parser.add_argument("-2", "--input2",
+                    help="paired-end file2")
+    parser.add_argument("-l", "--lossless",
+                    help="keep the reads orders, default:false, \
+                    if encode paired-end files, default:ture ",action="store_true")
     parser.add_argument("-k", "--kmer",type=int, default=15,
                     help="kmer size for bucket and de Bruijn graph, default=15")
-    parser.add_argument("-b", "--block",type=int,default=1024,
-                    help="input block size (M), default=1024")
     parser.add_argument("-v","--verbose", action="store_true",
                     help="verbose information")
+
     args = parser.parse_args()
+
     main(args)
 
 
