@@ -1,3 +1,26 @@
+"""MIT License
+
+Copyright (c) 2018 rongjiewang
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE."""
+
+
 from __future__ import print_function
 from __future__ import division
 
@@ -5,13 +28,12 @@ import sys
 sys.path.append("./arithCode")
 import arithmeticcoding
 import os
-from ngs_plumbing import dna ## DNA to 2bit
-from bitstring import * ##glombe integer
+import screed
+from bitstring import * #for BitStream()
 from collections import defaultdict
-import dna #for reverse complement dna
-import numpy as np
-import bitio
+import bitio # for bit output
 from bitstream import BitStream as sream
+import dna #for reverse_complement
 
 
 def multi_dimensions(n, type):
@@ -27,12 +49,14 @@ def nested_dict(n, type):
         return defaultdict(lambda: nested_dict(n-1, type))
 
 class encodeGraphClass(object):
-    """docstring for sortSequence"""
-    def __init__(self,indexLen,kmerLen,path,bucket_dict={},sequenceTable={}):
-        self.mutiDict = bucket_dict ### kmers for buckets 
+    """ encoding for sequence with dynamic de Bruijn graph """
+    def __init__(self, path, ispaired, kmerLen, verbose, sequenceTable):
+        self.mutiDict = {} ### kmers for buckets 
         self.sequenceTable = sequenceTable
         self.kmerLen = kmerLen
-        self.indexLen = indexLen 
+        self.indexLen = kmerLen
+        self.paired = ispaired
+        self.seqLen = 0
         #self.bucketDict = defaultdict(lambda : defaultdict(dict))
         self.bucketDict = {}#nested_dict(2, int)
         self.encodeBucketPath = {}
@@ -55,6 +79,9 @@ class encodeGraphClass(object):
         self.bitoutR = arithmeticcoding.BitOutputStream(open(self.outPutPath+".bifurR", "wb"))
         self.encodeSeqPathL = self.openFileLeft()
         self.encodeSeqPathR = self.openFileRight()
+        self.verbose = verbose
+        self.removeOutputFile()
+
     def openFileLeft(self):
         enc  = arithmeticcoding.ArithmeticEncoder(self.bitoutL)
         return enc
@@ -62,32 +89,20 @@ class encodeGraphClass(object):
     def openFileRight(self):
         enc = arithmeticcoding.ArithmeticEncoder(self.bitoutR)
         return enc 
-    def emptyPara(self):
-        self.mutiDict.clear() ### kmers for buckets 
-        self.sequenceTable.clear()
-        self.bucketDict.clear()#nested_dict(2, int)
-        self.encodeBucketPath.clear()
-        self.newNodeNum = 0
-        self.simpleNodeNum = 0
-        self.tipNodeNum = 0
-        self.bifurNodeNum = 0
-        self.firstSeq = BitStream()
-        self.numFlag = BitStream()
-        return
-    def setDiction(self,dict):
-        self.mutiDict = dict
+
     def setSequenceTable(self,table):
         self.sequenceTable = table
-    def setOutPath(self,path):
-        self.outPutPath = path
         return
-    def initialOutFile(self):
+
+    def removeOutputFile(self):
         fileoutFirstSeq = self.outPutPath + ".firSeq"
         fileoutNumFlag = self.outPutPath + ".numFlag"
         if os.path.exists(fileoutFirstSeq):
             os.remove(fileoutFirstSeq)
         if os.path.exists(fileoutNumFlag):
             os.remove(fileoutNumFlag)
+        return
+
     def outputEncodePath(self):
         self.encodeSeqPathL.finish()
         self.encodeSeqPathR.finish()
@@ -96,54 +111,52 @@ class encodeGraphClass(object):
         fileoutFirstSeq = self.outPutPath + ".firSeq"
         FirstSeqFile = open(fileoutFirstSeq,"a+")
         self.firstSeq.tofile(FirstSeqFile)
+        FirstSeqFile.close()
         fileoutNumFlag = self.outPutPath + ".numFlag"
         numFlagFile = open(fileoutNumFlag,"a+")
         self.numFlag.tofile(numFlagFile)
+        numFlagFile.close()
+        return
+
     def twobit_repr(self,ch):
         x = 0 if ch.upper() == 'A'  else  1 if ch.upper() == 'C' else 2 if ch.upper() == 'G' else 3
         return x
+
     def isDNA(self,ch):
         if ch.upper() == 'A'  or ch.upper() == 'C' or ch.upper() == 'G' or ch.upper() == 'T':
             return True
-        return False        
-    def analyKmerScore(self):
-        for bucketIndex in self.sequenceTable.keys():
-            i = 0
-            for seq,pos in self.sequenceTable[bucketIndex]:
-                score = self.getSeqScore(bucketIndex,seq)
-                self.sequenceTable[bucketIndex][i].append(score)
-                i += 1
-        return
+        return False 
+
     def sortSeqInbucket(self):
         for bucketIndex in self.sequenceTable.keys():
             self.sequenceTable[bucketIndex] = sorted(self.sequenceTable[bucketIndex],key=self.sort_key, reverse=True)
+        return
+
     def sort_key(self,seq):
         return seq[1],seq[2]
-    def getSeqScore(self,bucketIndex,seq):
-        kmerNumList = []
-        for kmer in self.getKmer(seq):
-            if kmer in self.mutiDict[bucketIndex]:
-                kmerNumList.append(self.mutiDict[bucketIndex][kmer])
-        score = np.sum(kmerNumList)
-        return score
 
     def getKmer(self,seq):
-        for i in xrange(len(seq)-self.kmerLen+1):
+        for i in xrange(self.seqLen-self.kmerLen+1):
             yield seq[i:i+self.kmerLen]
+
     def getKmerR(self,seq,pos):
-        for i in xrange(pos,len(seq)-self.kmerLen):
+        for i in xrange(pos,self.seqLen-self.kmerLen):
             yield seq[i:i+self.kmerLen+1]
+
     def getKmerL(self,seq,pos):
         for i in xrange(pos,0,-1):
             yield seq[i-1:i+self.kmerLen]
+
     def encodeBucket(self):
         seqNum = 1
         for bucketIndex in sorted(self.sequenceTable.keys()):
             iterSeq = iter(self.sequenceTable[bucketIndex])
             seq, pos = next(iterSeq)
+            self.seqLen = len(seq)
             self.encodeFirSeq(seq, pos)
             self.addtoGraph(seq, pos)
             for seq,pos in iterSeq:
+                self.seqLen = len(seq)
                 self.encodeSeq(bucketIndex, seq, pos)
                 self.addtoGraph(seq,pos)
                 if seqNum % 10000 == 0:
@@ -152,44 +165,44 @@ class encodeGraphClass(object):
             del self.sequenceTable[bucketIndex]
             self.bucketDict.clear()
         return
-    def isUniqueSuffix(self,bucketIndex,kmer):
-        for alterKmer in self.getAlterKmerInLastPos(kmer):
-            if alterKmer in self.bucketDict.keys():
-                return False
-        return True
-    def isUniquePrefix(self,bucketIndex,kmer):
-        for alterKmer in self.getAlterKmerInFirstPos(kmer):
-            if alterKmer in self.bucketDict.keys():
-                return False
-        return True
+
     def getAlterKmerInLastPos(self,kmer):
         for base in "ACGT":
             if base != kmer[-1]:
                 yield kmer[:-1]+base
+
     def getAlterKmerInFirstPos(self,kmer):
         for base in "ACGT":
             if base != kmer[0]:
                 yield base + kmer[1:]
+
     def Suffix(self,kmer):
         return kmer[1:]
+
     def Successors_in_graph(self, K):
         succ = []
-        if K in self.bucketDict:
+        try:
+            self.bucketDict[K]
             for base in range(4):
                 if self.bucketDict[K][base] > 1 and self.sufficient(K,base):
                     succ.append(K[1:]+self.num2dna[base])
+        except KeyError:
+            return succ
         return succ
+
     def sufficient(self,K,base):
         totalSum = sum(self.bucketDict[K])
         if self.bucketDict[K][base]/totalSum < self.deleteBifurRatio:
             return False
         return True
+
     def encodeFirSeq(self,seq,pos):# encode the first sequence in bucket
         for base in seq[:pos]:
             self.firstSeq.append(self.dna2bit[base])
         for base in seq[pos+self.kmerLen:]:
             self.firstSeq.append(self.dna2bit[base])
         return
+
     def encodeSeq(self,bucketIndex,seq,pos):
         #encode the left part
         K = dna.reverse_complement(str(bucketIndex))
@@ -242,9 +255,12 @@ class encodeGraphClass(object):
                     self.encodeSeqPathR.write(self.freqs, self.dna2num[base])
                 K = self.Suffix(K) + base
         return
+
     def getFreqs(self,K):
         for base in range(4):
             self.freqs.set(base,int(self.bucketDict[K][base]))
+        return
+
     def outputNodeInfo(self):
         if (self.simpleNodeNum + self.newNodeNum + self.tipNodeNum + self.bifurNodeNum) == 0:
             print("All the node is Tip node")
@@ -257,6 +273,8 @@ class encodeGraphClass(object):
                   self.newNodeNum + self.tipNodeNum + self.bifurNodeNum)))
             print("the numbers of bifurNodeNum is %d, take up %.2f%%"%(self.bifurNodeNum,self.bifurNodeNum*100.0/(self.simpleNodeNum+\
                   self.newNodeNum + self.tipNodeNum + self.bifurNodeNum)))
+        return
+
     def addtoGraph(self,seq,pos):
         for kmer in self.getKmerR(seq,pos):
             if str(kmer[:-1]) not in self.bucketDict:
@@ -267,6 +285,12 @@ class encodeGraphClass(object):
                 self.bucketDict.setdefault(dna.reverse_complement(kmer[1:]), [1,1,1,1])           
             self.bucketDict[dna.reverse_complement(kmer[1:])][3-self.dna2num[kmer[0]]] += 1
         return
+
+    def printDict(self,diction):
+        for key in diction.keys():
+            print(key,diction[key])
+        return
+
     def outputBucketDiction(self):
         fileoutBucketDictionPath = self.outPutPath + "bucketDiction"
         if os.path.exists(fileoutBucketDictionPath):
@@ -279,6 +303,7 @@ class encodeGraphClass(object):
                                             +'\n')
         BucketDictionPathFile.close()
         return
+
     def compressFile(self):
         if os.path.exists(self.outPutPath + ".firSeq.lz"):
             os.remove(self.outPutPath + ".firSeq.lz")
@@ -287,6 +312,7 @@ class encodeGraphClass(object):
             os.remove(self.outPutPath + ".numFlag.lz")
         os.system("plzip " + self.outPutPath + ".numFlag")
         return
+
     def analysisFileSize(self):
         leftsize=os.path.getsize(self.outPutPath + ".bifurL")
         rightsize=os.path.getsize(self.outPutPath + ".bifurR")
@@ -297,13 +323,22 @@ class encodeGraphClass(object):
         print(filesize,"sum",sum(filesize),"bytes")
         return
 
+    def encode(self):
+        self.encodeBucket()
+        self.outputEncodePath()
+        print("finish de Bruijn graph")
+        if self.verbose:
+            self.outputNodeInfo()
+        self.compressFile()
+        return
+
 class decodeGraphClass(object):
-    """docstring for sortSequence"""
-    def __init__(self,indexLen,kmerLen,inPutPath, outPutPath, bucket_dict={},sequenceTable={}):
-        self.mutiDict = bucket_dict ### kmers for buckets 
-        self.sequenceTable = sequenceTable
-        self.kmerLen = kmerLen
-        self.indexLen = indexLen 
+    """ decoding for sequence with dynamic de Bruijn graph """
+    def __init__(self,inPutPath, outPutPath, isPaired, readNum, bucketIndexLen, lossless, verbose):
+        self.mutiDict = {} ### kmers for buckets 
+        self.sequenceTable = [] #store sequence for output
+        self.kmerLen = bucketIndexLen
+        self.indexLen = bucketIndexLen 
         self.bucketDict = {}#nested_dict(2, int)
         self.encodeBucketPath = {}
         self.newNodeNum = 0
@@ -328,120 +363,136 @@ class decodeGraphClass(object):
         self.decodeSeqPathL = self.openFileLeft()
         self.decodeSeqPathR = self.openFileRight()
         self.outFileName = outPutPath + ".dna"
-        self.outFile = self.openOutFile()
-        self.readLen = 100
-        self.seqence = ""
+        self.paired = isPaired
+        self.seqLen = 0 #length for current read
+        self.outPairFileName = [outPutPath + "_1.dna", outPutPath + "_2.dna"]
+        self.outFile = None
+        self.outPairFile = None
+        self.readNum = readNum
+        self.seqence = "" ##encode seq
         self.bucketIndex = [] #bucket index 
         self.bucketCov = [] # reads number in bucket
-        self.readIndexPos = [] #index positions in each read 
+        self.readIndexPos = [] #index positions in each read
+        self.readLen = [] 
         self.readrc = sream() # read in forward or backward
         self.readN = {"flag":sream(), "pos":[], "l":[]} # N in read indicate, number, position and length
         self.numFlag = sream() #new nodes indicate
-    def setMetaInfor(self, readLen, bucketIndexLen):
-        self.readLen = readLen
-        self.indexLen = bucketIndexLen
-        self.kmerLen = bucketIndexLen
+        self.lossless = lossless
+        self.verbose = verbose
+        self.openOutFile() #prepare output file
+
+    def openOutFile(self):
+        if self.paired:
+            self.outPairFile = self.openOutPairFile()
+        else:
+            self.outFile = self.openOutSingleFile()
         return
-    def loadBucktData(self,bucketIndex, bucketCov, readIndexPos, readrc, readN):
+
+    def loadBucktData(self,bucketIndex, bucketCov, readIndexPos, readrc, readN, readLen, readOrder):
         self.bucketIndex = bucketIndex #bucket index 
         self.bucketCov = bucketCov # reads number in bucket
         self.readIndexPos = readIndexPos #index positions in each read
         self.readrc = readrc # read in forward or backward
         self.readN = readN # N in read indicate, position and length
+        self.readLen = readLen #read length
+        self.readOrder = readOrder # line numbers for reads in raw fastq file
+        return
+
     def openFileLeft(self):
         enc  = arithmeticcoding.ArithmeticDecoder(self.bitoutL)
         return enc
-    def openOutFile(self):
+        
+    def openOutSingleFile(self):
         self.initialOutFile()
         enc = open(self.outFileName,'a+')
         return enc
 
+    def openOutPairFile(self):
+        self.initialOutPairFile()
+        enc1 = open(self.outPairFileName[0],'a+')
+        enc2 = open(self.outPairFileName[1],'a+')
+        return [enc1,enc2]
+
     def openFileRight(self):
         enc = arithmeticcoding.ArithmeticDecoder(self.bitoutR)
-        return enc 
-    def setDiction(self,dict):
-        self.mutiDict = dict
-    def setSequenceTable(self,table):
-        self.sequenceTable = table
+        return enc
+
     def setPath(self,inPutPath, outPutPath):
         self.inPutPath = inPutPath
         self.outPutPath = outPutPath
         return
+
     def initialOutFile(self):
         if os.path.exists(self.outFileName):
             os.remove(self.outFileName)
+        return
+
+    def initialOutPairFile(self):
+        if os.path.exists(self.outPairFileName[0]):
+            os.remove(self.outPairFileName[0])
+        if os.path.exists(self.outPairFileName[1]):
+            os.remove(self.outPairFileName[1])
+        return
+
     def twobit_repr(self,ch):
         x = 0 if ch.upper() == 'A'  else  1 if ch.upper() == 'C' else 2 if ch.upper() == 'G' else 3
         return x
+
     def isDNA(self,ch):
         if ch.upper() == 'A'  or ch.upper() == 'C' or ch.upper() == 'G' or ch.upper() == 'T':
             return True
-        return False        
-    def analyKmerScore(self):
-        for bucketIndex in self.sequenceTable.keys():
-            i = 0
-            for seq,pos in self.sequenceTable[bucketIndex]:
-                score = self.getSeqScore(bucketIndex,seq)
-                self.sequenceTable[bucketIndex][i].append(score)
-                i += 1
-        return
-    def sortSeqInbucket(self):
-        for bucketIndex in self.sequenceTable.keys():
-            self.sequenceTable[bucketIndex] = sorted(self.sequenceTable[bucketIndex],key=self.sort_key, reverse=True)
+        return False
+
     def sort_key(self,seq):
         return seq[1],seq[2]
-    def getSeqScore(self,bucketIndex,seq):
-        kmerNumList = []
-        for kmer in self.getKmer(seq):
-            if kmer in self.mutiDict[bucketIndex]:
-                kmerNumList.append(self.mutiDict[bucketIndex][kmer])
-        score = np.sum(kmerNumList)
-        return score
 
     def getKmer(self,seq):
-        for i in xrange(len(seq)-self.kmerLen+1):
+        for i in xrange(self.seqLen-self.kmerLen+1):
             yield seq[i:i+self.kmerLen]
+
     def getKmerR(self,seq,pos):
-        for i in xrange(pos,len(seq)-self.kmerLen):
+        for i in xrange(pos,self.seqLen-self.kmerLen):
             yield seq[i:i+self.kmerLen+1]
+
     def getKmerL(self,seq,pos):
         for i in xrange(pos,0,-1):
             yield seq[i-1:i+self.kmerLen]
-    def isUniqueSuffix(self,bucketIndex,kmer):
-        for alterKmer in self.getAlterKmerInLastPos(kmer):
-            if alterKmer in self.bucketDict.keys():
-                return False
-        return True
-    def isUniquePrefix(self,bucketIndex,kmer):
-        for alterKmer in self.getAlterKmerInFirstPos(kmer):
-            if alterKmer in self.bucketDict.keys():
-                return False
-        return True
+
     def getAlterKmerInLastPos(self,kmer):
         for base in "ACGT":
             if base != kmer[-1]:
                 yield kmer[:-1]+base
+
     def getAlterKmerInFirstPos(self,kmer):
         for base in "ACGT":
             if base != kmer[0]:
                 yield base + kmer[1:]
+
     def Suffix(self,kmer):
         return kmer[1:]
+
     def Successors_in_graph(self, K):
         succ = []
-        if K in self.bucketDict:
+        try:
+            self.bucketDict[K]
             for base in range(4):
                 if self.bucketDict[K][base] > 1 and self.sufficient(K,base):
                     succ.append(K[1:]+self.num2dna[base])
+        except KeyError:
+            return succ
         return succ
+
     def sufficient(self,K,base):
         totalSum = sum(self.bucketDict[K])
         if self.bucketDict[K][base]/totalSum < self.deleteBifurRatio:
             return False
         return True
+
     def getFreqs(self,K):
         for base in range(4):
             self.freqs.set(base,int(self.bucketDict[K][base]))
+        return
+
     def addtoGraph(self,seq,pos):
         for kmer in self.getKmerR(seq,pos):
             if str(kmer[:-1]) not in self.bucketDict:
@@ -452,73 +503,88 @@ class decodeGraphClass(object):
                 self.bucketDict.setdefault(dna.reverse_complement(kmer[1:]), [1,1,1,1])           
             self.bucketDict[dna.reverse_complement(kmer[1:])][3-self.dna2num[kmer[0]]] += 1
         return
-    def decompress(self):
-        self.unPlzipFiles()
-        self.decodeSeq()
-        self.outFile.close()
+
+    def decode(self):
+        self.unPlzipFiles()#unzip meta files
+        if self.lossless:
+            self.outPutReorderSeq() # recover the raw order of the reads sequence
+        else:
+            self.decodeSeq() #decode the graph information
+        self.deleteUnzipFiles() #delete unziped files
         return
+
     def unPlzipFiles(self):
         for name in ["firSeq","numFlag"]:
             file = self.inPutPath + "." + name + ".lz"                           
             if os.path.exists(file):
-                comand= "plzip -d " + file
+                comand= "plzip -d -k " + file
                 os.system(comand)
         return
+
     def decodeSeq(self):
         self.decodeNumFlag()
         file = self.inPutPath + ".firSeq"
         firSeqFile = bitio.bit_open(file, "r")
-        firSeqLoadLen = (self.readLen-self.indexLen)*2
         for bucketIndex in self.bucketIndex:
             self.bucketDict.clear() #initial the bucketDiction with nothing
             indexPos = self.readIndexPos.pop(0)
-            self.sequence = self.decompressFirSeq(firSeqFile, bucketIndex, indexPos, firSeqLoadLen)
+            self.seqLen = self.readLen.pop(0)
+            self.sequence = self.decompressFirSeq(firSeqFile, bucketIndex, indexPos)
             self.addtoGraph(self.sequence, indexPos)
             self.outPutSeqence()
             readNum = 0
             bucketReads = self.bucketCov.pop(0)
             while readNum < bucketReads:
                 indexPos += self.readIndexPos.pop(0)
+                self.seqLen = self.readLen.pop(0)
                 self.sequence = self.decompressGraph(bucketIndex, indexPos)
                 self.addtoGraph(self.sequence, indexPos)
                 self.outPutSeqence()
                 readNum += 1
-        print("simpleNodeNum is %d"% self.simpleNodeNum)
-        print("newNodeNum is %d"% self.newNodeNum)
-        print("tipNodeNum is %d"% self.tipNodeNum)
-        print("bifurNodeNum is %d"% self.bifurNodeNum)
+        if self.verbose:
+            self.outputNodeInfo()
         firSeqFile.close()
-        self.outFile.close()
+        if self.paired:
+            self.outPairFile[0].close()
+            self.outPairFile[1].close()
+        else:
+            self.outFile.close()
         print("decoding success!")
         return
-    def decompressFirSeq(self, firSeqFile, bucketIndex, indexPos, firSeqLoadLen):
+
+    def decompressFirSeq(self, firSeqFile, bucketIndex, indexPos):
+        firSeqLoadLen = (self.seqLen-self.indexLen)*2
         seq = firSeqFile.read_bits(firSeqLoadLen)
         sequence = self.num2Base(seq)
         sequence.insert(indexPos, bucketIndex)
         sequence = ''.join(sequence)
         return sequence
+
     def num2Base(self, indexNum):
         seq = []
         while indexNum:
             seq.append(self.num2dna[(indexNum & 3)])
             indexNum = indexNum >> 2
-        while len(seq) < (self.readLen-self.indexLen):
+        while len(seq) < (self.seqLen-self.indexLen):
             seq.append("A")
         return seq[::-1]
+
     def outPutSeqence(self):
         if self.readrc.read(bool,1)[0]:
             self.sequence = dna.reverse_complement(self.sequence)
-        self.replaceN()        
+        self.replaceN()
         self.outFile.write(self.sequence+"\n")
         return
+
     def replaceN(self):
         if self.readN["flag"].read(bool,1)[0]:
             prePos = 0
             for pos, length in zip(self.readN["pos"].pop(0), self.readN["l"].pop(0)):
                 pos += prePos
-                self.sequence = self.sequence[:pos] + "N"*int(length+1) + self.sequence[(pos+length+1):]
+                self.sequence = self.sequence[:pos] + "N"*int(length) + self.sequence[(pos+length):]
                 prePos = pos
         return
+
     def decompressGraph(self,bucketIndex, indexPos):
         sequence = bucketIndex
         #decode the left path
@@ -551,7 +617,7 @@ class decodeGraphClass(object):
             sequence = self.recdna[base] + sequence
         #decode the right path
         K = bucketIndex
-        for i in range(self.readLen-indexPos-self.indexLen):
+        for i in range(self.seqLen-indexPos-self.indexLen):
             succ = self.Successors_in_graph(K)
             if len(succ) == 1:
                 if self.numFlag.read(bool,1)[0]: # New node
@@ -577,6 +643,7 @@ class decodeGraphClass(object):
                 K = self.Suffix(K) + base
             sequence += base
         return sequence
+
     def decodeNumFlag(self):
         file = self.inPutPath + ".numFlag"
         with open(file,'rb') as f:
@@ -584,6 +651,88 @@ class decodeGraphClass(object):
             self.numFlag.write(data,bytes)
         f.close()
         return
+
+    def outputNodeInfo(self):
+        if (self.simpleNodeNum + self.newNodeNum + self.tipNodeNum + self.bifurNodeNum) == 0:
+            print("All the node is Tip node")
+        else:
+            print("the numbers of simpleNodeNum is %d, take up %.2f%%"%(self.simpleNodeNum,self.simpleNodeNum*100.0/(self.simpleNodeNum+\
+                  self.newNodeNum + self.tipNodeNum + self.bifurNodeNum)))
+            print("the numbers of newNodeNum is %d, take up %.2f%%"%(self.newNodeNum,self.newNodeNum*100.0/(self.simpleNodeNum+\
+                  self.newNodeNum + self.tipNodeNum + self.bifurNodeNum)))
+            print("the numbers of tipNodeNum is %d, take up %.2f%%"%(self.tipNodeNum,self.tipNodeNum*100.0/(self.simpleNodeNum+\
+                  self.newNodeNum + self.tipNodeNum + self.bifurNodeNum)))
+            print("the numbers of bifurNodeNum is %d, take up %.2f%%"%(self.bifurNodeNum,self.bifurNodeNum*100.0/(self.simpleNodeNum+\
+                  self.newNodeNum + self.tipNodeNum + self.bifurNodeNum)))
+        return
+
+    def outPutReorderSeq(self):
+        self.decodeNumFlag()
+        file = self.inPutPath + ".firSeq"
+        firSeqFile = bitio.bit_open(file, "r")
+        self.takePlaceList()
+        for bucketIndex in self.bucketIndex:
+            self.bucketDict.clear() #initial the bucketDiction with nothing
+            indexPos = self.readIndexPos.pop(0)
+            self.seqLen = self.readLen.pop(0)
+            self.sequence = self.decompressFirSeq(firSeqFile, bucketIndex, indexPos)
+            self.addtoGraph(self.sequence, indexPos)
+            order = self.readOrder.pop(0)
+            self.ajustSeqDir()
+            self.replaceN()
+            self.sequenceTable[order] = self.sequence 
+            readNum = 0
+            bucketReads = self.bucketCov.pop(0)
+            while readNum < bucketReads:
+                indexPos += self.readIndexPos.pop(0)
+                self.seqLen = self.readLen.pop(0)
+                self.sequence = self.decompressGraph(bucketIndex, indexPos)
+                self.addtoGraph(self.sequence, indexPos)
+                order = self.readOrder.pop(0)
+                self.ajustSeqDir()
+                self.replaceN()
+                self.sequenceTable[order] = self.sequence 
+                readNum += 1
+        self.outPutSortedSeq()
+        if self.verbose:
+            self.outputNodeInfo()
+        firSeqFile.close()
+        if self.paired:
+            self.outPairFile[0].close()
+            self.outPairFile[1].close()
+        else:
+            self.outFile.close()
+        print("decoding success!")
+        return
+
+    def ajustSeqDir(self):
+        if self.readrc.read(bool,1)[0]:
+            self.sequence = dna.reverse_complement(self.sequence)
+        return
+
+    def outPutSortedSeq(self):
+        if self.paired:
+            for seq in self.sequenceTable[::2]: #output even sequences
+                self.outPairFile[0].write(seq+"\n")
+            for seq in self.sequenceTable[1::2]: #output odd sequences
+                self.outPairFile[1].write(seq+"\n")
+        else:
+            for seq in self.sequenceTable:
+                self.outFile.write(seq+"\n")
+        return
+
+    def deleteUnzipFiles(self):
+        for name in ["firSeq","numFlag"]:
+            file = self.inPutPath + "." + name                           
+            if os.path.exists(file):
+                comand= "rm " + file
+                os.system(comand)
+        return
+
+    def takePlaceList(self):
+        for i in range(self.readNum):self.sequenceTable.append([])
+        return
+
 
 
 
