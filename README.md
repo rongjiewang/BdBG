@@ -4,14 +4,18 @@ BdBG - BdBG: a bucket-based method for bacterial genome sequencing data compress
 Currently, BdBG works with FASTQ files and supports only compression of DNA stream, discarding the read names and qualities. By compressing only the DNA stream, it can reduce the bacterial genome sequencing data from 8 bits per base to 0.23 bits per base, achieving compression ratio 2.875%.
 
 ## Install
-This is a step by step instruction for installing the BdBG on linux.
-### Requirements for python 2.7* modules
-* Screed
-* numpy
+This is a step by step instruction for installing the BdBG for python 2.7*.
+### Requirements for python modules
+* screed
 * bitstring
+* bitstream
+* bitio
+### Requirements for text compression tool
+* plzip
 
 ### Command to install
     pip install -r requirements.txt
+    sudo apt-get install plzip
 
 ## Usage
 
