@@ -21,9 +21,9 @@ This is a step by step instruction for installing the BdBG for python 2.7*.
 
 Sequence data stream compression using BdBG is a 2 stage process, consisting of bucket and de Bruijn raph subprograms in chain. However, to decompress the DNA stream, only de Bruijn graph is needed.
 
-### BdBG.py
+### BdBG OutPut
 
-BdBG.py first performs DNA records clustering into separate bucket representing signatures. As an input it takes a single or a set of FASTQ files and stores the output to five separate files: 
+BdBG first performs reading bucket, output streams contains five files: 
 
 * `*.index.lz`： bucktes index stream；
 * `*.cov.lz`： the number of reads in the buckets;
@@ -31,7 +31,7 @@ BdBG.py first performs DNA records clustering into separate bucket representing 
 * `*.rc`:  whether the read in forward or in reverse-complement direction;
 * `*.N.lz`: the characters "N" postions and length in the reads.
 
-Then, BdBG.py performs encoding the read as a path in the dynamic de Bruijn graph in each bucket independently. It stores the output to four separate files: 
+Then, BdBG encodes the read as a path in the dynamic de Bruijn graph in each bucket independently. output streams contains five files: 
 
 * `*.bifurL`: the read left bifurcation path from the beginning 'anchor' k-mer;
 * `*.bifurR`: the read right bifurcation path from the beginning 'anchor' k-mer;
