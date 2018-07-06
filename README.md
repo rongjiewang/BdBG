@@ -1,17 +1,17 @@
 # BdBG
-BdBG - BdBG: a bucket-based method for bacterial genome sequencing data compression with a dynamic de Bruijn graph.
+BdBG - BdBG: a bucket-based method for compressing genome sequencing data with dynamic de Bruijn graph.
 
-Currently, BdBG works with FASTQ files and supports only compression of DNA stream, discarding the read names and qualities. By compressing only the DNA stream, it can reduce the bacterial genome sequencing data from 8 bits per base to 0.23 bits per base, achieving compression ratio 2.875%.
+BdBG, a new alignment-free and reference-free compression of FASTQ sequences stream, the method is based on the concept of bucketing similar reads into the same bucket and compressing reads in each bucket individually by the dynamic de Bruijn graph. Experimental results on eight genome sequencing datasets testify to the effectiveness of BdBG over state-of-the-art methods.
 
 ## Install
 This is a step by step instruction for installing the BdBG for python 2.7*.
-### Requirements for python modules
-* screed
-* bitstring
-* bitstream
-* bitio
-### Requirements for text compression tool
-* plzip
+### Requirements for python modules & versions
+* screed >= 1.0
+* bitstring >= 3.1.5
+* bitstream >= 2.5.4
+* bitio >= 0.2
+### Requirements for text compression tool & version
+* plzip >= 0.9
 
 ### Command to install
     pip install -r requirements.txt
@@ -19,7 +19,7 @@ This is a step by step instruction for installing the BdBG for python 2.7*.
 
 ## Usage
 
-DNA stream compression using BdBG is a 2 stage process, consisting of bucket and de Bruijn raph subprograms in chain. However, to decompress the DNA stream, only de Bruijn graph is needed.
+Sequence data stream compression using BdBG is a 2 stage process, consisting of bucket and de Bruijn raph subprograms in chain. However, to decompress the DNA stream, only de Bruijn graph is needed.
 
 ### BdBG.py
 
