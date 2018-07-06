@@ -23,11 +23,21 @@ Sequence data stream compression using BdBG is a 2 stage process, consisting of 
 
 ### BdBG.py
 
-BdBG.py first performs DNA records clustering into separate bucket representing signatures. As an input it takes a single or a set of FASTQ files and stores the output to five separate files: `*.index.lz` file, containing encoded bucktes index stream, `*.cov.lz` file, containing the number of reads in the buckets, `*.indexPos.lz` file, containing the bucket index positons in each read, `*.rc` file, containing wether the read in forward or backward, and `*.N.lz` file, containing the character N postions and length in the reads.
+BdBG.py first performs DNA records clustering into separate bucket representing signatures. As an input it takes a single or a set of FASTQ files and stores the output to five separate files: 
 
-And then, BdBG.py performs encoding the read as a path in the dynamic de Bruijn graph in each bucket independently. It stores the output to four separate files: `*.bifurL` file, containing encode the read left bifurcation path from the beginning 'anchor' k-mer, `*.bifurR` file, containing encode the read right bifurcation path from the beginning 'anchor' k-mer, `*.firSeq.lz` file, containing the first reads in the buckets, and `*.numFlag.lz` file, containing the New nodes positions flag in the bifuraction list.
+`*.index.lz`： bucktes index stream；
+`*.cov.lz`： the number of reads in the buckets;
+`*.indexPos.lz`: the bucket index positons in each read;
+`*.rc`:  whether the read in forward or in reverse-complement direction;
+`*.N.lz`: the characters "N" postions and length in the reads.
 
-There are a option parameter '-l' to unchange the raw reads orders by extra adding a `*.order.lz` file to compressed files. The parameter '-l' default is false. However, when encode paired-end files, default value become ture, beceause we have to keep the paired information for paired-end reads. 
+Then, BdBG.py performs encoding the read as a path in the dynamic de Bruijn graph in each bucket independently. It stores the output to four separate files: 
+
+`*.bifurL`: the read left bifurcation path from the beginning 'anchor' k-mer;
+`*.bifurR`: the read right bifurcation path from the beginning 'anchor' k-mer;
+`*.firSeq.lz`: the first read in each bucket; 
+`*.numFlag.lz`: the New node position flags in the bifuraction list.
+`*.order.lz`: reserve the raw read orders for paired-end reads. it is a option parameter '-l' for single-end reads, defaut:false. 
 
 
 ### Command line
