@@ -1,7 +1,7 @@
 # BdBG
-BdBG - BdBG: a bucket-based method for compressing genome sequencing data with dynamic de Bruijn graph.
+BdBG - BdBG: a bucket-based method for compressing genome sequencing data with dynamic de Bruijn graphs.
 
-BdBG, a new alignment-free and reference-free compression of FASTQ sequences stream, the method is based on the concept of bucketing similar reads into the same bucket and compressing reads in each bucket individually by the dynamic de Bruijn graph. Experimental results on eight genome sequencing datasets testify to the effectiveness of BdBG over state-of-the-art methods.
+BdBG, a new alignment-free and reference-free compression of FASTQ sequences stream, the method is based on the concept of bucketing similar reads into the same bucket and compressing reads in each bucket individually by a dynamic de Bruijn graph. Experimental results on eight different genome and transcriptome sequencing datasets testified the compression performance of BdBG is better than that of GZIP, LEON and MINCE, with improvements of up to 83%, 81%, and 52%, respectively.
 
 ## Install
 This is a step by step instruction for installing the BdBG for python 2.7*.
