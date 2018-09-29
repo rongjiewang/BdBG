@@ -101,8 +101,8 @@ If there nothing out in creeen with shell command diff, proof that the compresst
     SRR554369	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR554/SRR554369
     SRR959239	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR959/SRR959239
     ERR418881	ftp://ftp.ddbj.nig.ac.jp/ddbj_database/dra/sralite/ByExp/litesra/ERX/ERX385/ERX385178/ERR418881
-    MH0001.081026 http://public.genomics.org.cn/BGI/gutmeta/High_quality_reads/MH0001/081026/MH0001_081026_clean.1.fq.gz
-		  http://public.genomics.org.cn/BGI/gutmeta/High_quality_reads/MH0001/081026/MH0001_081026_clean.2.fq.gz
+    MH0001.081026	http://public.genomics.org.cn/BGI/gutmeta/High_quality_reads/MH0001/081026/MH0001_081026_clean.1.fq.gz
+        	http://public.genomics.org.cn/BGI/gutmeta/High_quality_reads/MH0001/081026/MH0001_081026_clean.2.fq.gz
     SRR327342	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR327/SRR327342
     SRR037452	ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR037/SRR037452
     
